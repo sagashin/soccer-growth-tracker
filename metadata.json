@@ -1,0 +1,6 @@
+{
+  "name": "PitchLog — ジュニアサッカー振り返り＆成長トラッカー",
+  "description": "ジュニアサッカー選手のための試合・練習振り返り、AI専属コーチ分析、YouTubeタイムスタンプ連携、スパイク使用時間トラッカー",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
