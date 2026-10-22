@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const prompt = `あなたはJFA公認ライセンスを持ち、ジュニア年代（U-10〜U-12）の育成に精通した経験豊富で論理的な専属サッカーコーチです。
-以下のジュニアサッカー選手の試合・練習の振り返りメモを分析し、構造化JSONデータを出力してください。
+    const prompt = `あなたはJFA公認ライセンスを持ち、ジュニアユース世代（U-13〜U-15）の育成に精通した経験豊富で論理的な専属サッカーコーチです。
+以下のジュニアユース（U-15）サッカー選手の試合・練習の振り返りメモを分析し、構造化JSONデータを出力してください。
 
 【試合・練習の基本情報】
 - 日付: ${date || '未指定'}
@@ -78,18 +78,24 @@ ${challenges || '（特になし）'}
 
 【コーチングと分析の指針】
 1. 抽象的な精神論（「もっと頑張ろう」「気合を入れよう」など）は一切排除してください。
-2. 「いつ（どのタイミングで）・どこで（どのスペースや視野で）・どう動くか（身体の向き、ファーストタッチの置き所、2軸の重心移動、首振りのタイミングなど）」を踏まえた、小学生〜中学生の選手がピッチ上で映像としてイメージできる具体的なアドバイスにしてください。
+2. 「いつ（どのタイミングで）・どこで（どのスペースや視野で）・どう動くか（身体の向き、ファーストタッチの置き所、2軸の重心移動、首振りのタイミングなど）」を踏まえた、ジュニアユース（中学生年代）の選手がピッチ上で映像としてイメージできる具体的なアドバイスにしてください。
 3. scores（technical, tactical, physical, mental）はそれぞれ 1〜5 の整数で評価してください。
 4. next_action には、次の練習や試合で意識する「たった1つの具体的なアクション目標」を簡潔かつ明確に記述してください。`;
 
     try {
-      const geminiPromise = ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          responseMimeType: 'application/json',
-          responseSchema: {
+      const candidateModels = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'];
+      let response: any = null;
+      let lastErr: unknown = null;
+
+      for (const targetModel of candidateModels) {
+        try {
+          const geminiPromise = ai.models.generateContent({
+            model: targetModel,
+            contents: prompt,
+            config: {
+              thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+              responseMimeType: 'application/json',
+              responseSchema: {
             type: Type.OBJECT,
             properties: {
               summary_title: {
@@ -164,16 +170,26 @@ ${challenges || '（特になし）'}
         },
       });
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini API timeout')), 6000)
-      );
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Gemini API timeout')), 6000)
+          );
 
-      const response = await Promise.race([geminiPromise, timeoutPromise]);
+          const res = await Promise.race([geminiPromise, timeoutPromise]);
+          if (res.text?.trim()) {
+            response = res;
+            break;
+          }
+        } catch (mErr) {
+          lastErr = mErr;
+          console.warn(`Model ${targetModel} failed in /api/analyze, trying fallback:`, mErr);
+        }
+      }
+
+      if (!response) {
+        throw lastErr || new Error('All candidate Gemini models failed');
+      }
 
       const rawText = response.text?.trim();
-      if (!rawText) {
-        throw new Error('Empty response from Gemini');
-      }
 
       const parsed = JSON.parse(rawText) as AIAnalysisResult;
       const clampScore = (n: number) => Math.max(1, Math.min(5, Math.round(Number(n) || 3)));

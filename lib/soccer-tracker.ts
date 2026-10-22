@@ -107,7 +107,7 @@ export const INITIAL_RECORDS: MatchRecord[] = [
     id: 'rec-2026-10-18',
     date: '2026-10-18',
     type: '公式戦',
-    opponent: 'FCバロンドールU-12（後期リーグ第4節）',
+    opponent: 'FCバロンドールU-15（後期リーグ第4節）',
     minutesPlayed: 40,
     condition: 5,
     spikeId: 'spike-mizuno-morelia-2',
@@ -172,7 +172,7 @@ export const INITIAL_RECORDS: MatchRecord[] = [
     id: 'rec-2026-10-11',
     date: '2026-10-11',
     type: '練習試合',
-    opponent: '青葉台ジュニアSC（15分×3本）',
+    opponent: '青葉台ジュニアユースFC（15分×3本）',
     minutesPlayed: 45,
     condition: 4,
     spikeId: 'spike-asics-dslight-xfly',
@@ -547,29 +547,168 @@ export function generateFallbackAnalysis(input: {
   goodPlays: string;
   challenges: string;
 }): AIAnalysisResult {
-  const good = input.goodPlays.trim() || '積極的な仕掛けとボールに関わる意識';
-  const chal = input.challenges.trim() || 'プレッシャー下での判断スピードとファーストタッチの置き所';
+  const good = input.goodPlays.trim();
+  const chal = input.challenges.trim();
+  const allText = `${good} ${chal}`;
 
-  const hasPassOrTrap = /パス|トラップ|シュート|ドリブル|タッチ|ターン/.test(good + chal);
-  const hasScanOrSpace = /首振り|視野|スペース|裏|ポジショニング|切り替え|予測/.test(good + chal);
-  const hasPhysical = /走り|スプリント|体幹|フィジカル|バランス|疲れ|1対1/.test(good + chal);
+  // --- Category Detectors ---
+  const isShoot = /シュート|ゴール|得点|決定力|枠|ミドル|ボレー|キーパー|押し込|ネット/.test(allText);
+  const isDribble = /ドリブル|仕掛け|1対1|フェイント|突破|カットイン|かわす|抜き|抜かれ|突っ込/.test(allText);
+  const isPass = /パス|スルーパス|アシスト|ワンツー|クロス|センタリング|展開|ロング|ショート|繋ぎ|通ら|カット|ズレ/.test(allText);
+  const isTrap = /トラップ|ファーストタッチ|コントロール|浮き球|収める|こぼす|弾く|足元|タッチ/.test(allText);
+  const isDefense = /守備|ディフェンス|奪う|インターセプト|寄せる|カバー|マーク|ブロック|クリア|抜かれた|裏を取られ/.test(allText);
+  const isVision = /首振り|視野|スキャン|周り|見る|見えて|気づ|認知|状況|確認/.test(allText);
+  const isPosition = /ポジショニング|スペース|裏|幅|サポート|角度|距離|孤立|顔を出す|落ちる/.test(allText);
+  const isTransition = /切り替え|トランジション|攻守|奪われた後|奪った後|カウンター/.test(allText);
+  const isStamina = /スタミナ|体力|後半|バテ|疲れ|走れな|足がつ|重い/.test(allText);
+  const isContact = /当たり負け|フィジカル|体幹|競り合い|バランス|倒され|パワー|ふっ飛ば/.test(allText);
+  const isMentalWeak = /弱気|怖が|焦り|慌て|自信|消極的|迷い|緊張|引いて/.test(chal);
+  const isVoice = /声|声出し|指示|呼ぶ|コミュニケーション/.test(allText);
 
-  const techScore = Math.min(5, Math.max(3, hasPassOrTrap ? 4 : 3));
-  const tactScore = Math.min(5, Math.max(3, hasScanOrSpace ? 4 : 3));
-  const physScore = Math.min(5, Math.max(3, Math.round((input.condition + (hasPhysical ? 4 : 3)) / 2)));
-  const mentScore = Math.min(5, Math.max(3, good.length > 25 ? 4 : 3));
+  // --- Dynamic Topic Detection for Title & Main Focus ---
+  let mainTopic = '総合的プレー';
+  if (isShoot) mainTopic = 'シュート決定力とフィニッシュワーク';
+  else if (isDribble) mainTopic = '1対1の仕掛けと間合いの勝負';
+  else if (isPass) mainTopic = 'パスの配球と判断スピード';
+  else if (isTrap) mainTopic = 'ファーストタッチとコントロール技術';
+  else if (isDefense) mainTopic = 'ボール奪取と守備のポジショニング';
+  else if (isVision) mainTopic = '首振りと周囲の状況把握';
 
   const titlePrefix = input.opponent.includes(input.type)
     ? input.opponent
     : `${input.opponent}（${input.type}）`;
+  const summary_title = `${titlePrefix}：${mainTopic}に焦点を当てた振り返り`;
+
+  // --- Dynamic Praise Generation ---
+  let praiseText = '';
+  if (isShoot && /シュート|ゴール|得点/.test(good)) {
+    praiseText = `「${good.slice(0, 50)}」の場面では、ボールに対して迷わず踏み込み、枠を捉えるイメージを持てていたことが素晴らしい結果に結びついています。フィニッシュの感覚を大切にしてください。`;
+  } else if (isDribble && /ドリブル|仕掛け|1対1|抜/.test(good)) {
+    praiseText = `「${good.slice(0, 50)}」で見せた仕掛けは、相手DFの重心の逆を突き、加速するタイミングが的確でした。自信を持って自分の間合いで勝負できています。`;
+  } else if (isPass && /パス|アシスト|スルー/.test(good)) {
+    praiseText = `「${good.slice(0, 50)}」のパスは、味方の走るスピードとスペースを見極めた素晴らしい判断です。視野の広さと丁寧なボールタッチの賜物です。`;
+  } else if (isDefense && /守備|奪|インターセプト|寄せ/.test(good)) {
+    praiseText = `「${good.slice(0, 50)}」の守備では、相手の次のプレーを予測して先手を打つ鋭いアプローチが光りました。チームに大きな流れを引き寄せる好プレーです。`;
+  } else if (good) {
+    praiseText = `「${good.slice(0, 55)}」をやりきれたことは、日頃の基礎練習の成果がピッチ上で発揮できた証拠です。この成功の身体感覚を忘れずに武器として磨きましょう。`;
+  } else {
+    praiseText = '試合を通じて積極的に関わり、自分のプレーを振り返る姿勢自体が着実な成長に繋がっています。';
+  }
+
+  // --- Dynamic Improvement & Next Action Generation ---
+  let improvementText = '';
+  let nextActionText = '';
+
+  if (isShoot && /外|枠|決まら|キーパー/.test(chal)) {
+    improvementText = `「${chal.slice(0, 55)}」の改善には、シュート直前の0.5秒でGKの立ち位置を間接視野で確認し、力みを抜いてインサイドや狙いすましたコースへ流し込む意識が効果的です。`;
+    nextActionText = 'シュート練習やミニゲームで、打つ直前にGKの位置をチラ見して逆サイドネットを狙う';
+  } else if (isDribble && /取られ|引っかか|突っ込/.test(chal)) {
+    improvementText = `「${chal.slice(0, 55)}」の課題は、相手の正面に突っ込まず、まず斜め前へ半歩ボールを運んで相手の重心を動かしてから逆を突く「間合いのコントロール」で解決できます。`;
+    nextActionText = 'ボールを持ったら相手に近づきすぎず、腕1本分の間合いで左右に揺さぶってから加速する';
+  } else if (isPass && /ズレ|通ら|カット|取られ/.test(chal)) {
+    improvementText = `「${chal.slice(0, 55)}」の場面では、蹴る瞬間に軸足のつま先がターゲットをしっかり向いているかと、味方が走り込むスペースへボールの勢いを合わせる配慮がポイントです。`;
+    nextActionText = 'パスを出す前に軸足の向きを意識し、味方の利き足の前へ届くグラウンダーのパスを通す';
+  } else if (isTrap && /トラップ|弾|こぼ|足元/.test(chal)) {
+    improvementText = `「${chal.slice(0, 55)}」の局面では、足元でピタッと止めるだけでなく、次にパスや前を向ける「斜め前1m」のオープンスペースにワンアクションで置くファーストタッチを整理しましょう。`;
+    nextActionText = 'パスを受ける前に周囲を見て、次のプレー方向にボールを1タッチで前へ運ぶ';
+  } else if (isDefense && /抜かれ|裏|遅れ|飛び込/.test(chal)) {
+    improvementText = `「${chal.slice(0, 55)}」の守備課題は、相手に一気に飛び込まず、半身の姿勢（前後のステップ）を崩さずに相手の得意足を消して外側へ誘導することが鉄則です。`;
+    nextActionText = '相手と対峙した時は飛び込まず、腕1本分の距離を保ちながら半身で相手を外へ追い込む';
+  } else if (isStamina) {
+    improvementText = `「${chal.slice(0, 55)}」の疲労課題に対しては、全速力で追い続けるだけでなく、味方のサポート位置と陣形を見ながら「行くべき時」と「ステイする時」のメリハリをつけましょう。`;
+    nextActionText = 'プレーが止まった短い時間で深呼吸し、常に全力ではなくメリハリのあるポジショニングを意識する';
+  } else if (isVision || /首振り|見え/.test(chal)) {
+    improvementText = `「${chal.slice(0, 55)}」を防ぐには、ボールが味方の足元を離れて自分に届く「球足の移動中」に素早く1回首を振って周囲の敵とスペースを確認する習慣が不可欠です。`;
+    nextActionText = 'ボールが自分に向かって転がってくる間に、必ず1回首を振って相手DFの位置を見る';
+  } else if (isMentalWeak) {
+    improvementText = `「${chal.slice(0, 55)}」という悔しさは次の糧です。ミスをしても下を向かず、最初の3秒ですぐに次のポジションを取り直す「ポジティブな切り替え」を心がけましょう。`;
+    nextActionText = 'ミスした直後の3秒間ですぐに次の守備やサポートへ動き出す';
+  } else {
+    improvementText = `「${chal.slice(0, 55) || 'プレッシャー下でのプレー'}」の課題は、受ける前の準備動作（半身の構えと味方との距離感）をワンテンポ早く始めることで大きく改善されます。`;
+    nextActionText = 'ボールを受ける前の「準備動作」を0.5秒早く開始し、次の選択肢を2つ以上持っておく';
+  }
+
+  // --- Dynamic Four Pillars ---
+  // 1. Technical
+  let techPillar = '';
+  if (isShoot || isPass) {
+    techPillar = `ボールインパクト時の軸足の安定と、インサイド・インステップの芯で捉える技術の再現性がポイントです。練習では助走の角度を一定に保つドリルを反復しましょう。`;
+  } else if (isDribble || isTrap) {
+    techPillar = `足首の脱力と、小指球・親指球を使った繊細なタッチでボールを常にコントロール下に置く技術が光ります。ファーストタッチの置き所を常に最適化しましょう。`;
+  } else if (isDefense) {
+    techPillar = `ボールを奪いに行く瞬間の足の出し方と、相手とボールの間に半身を滑り込ませる身体の使い方が技術的なカギとなります。`;
+  } else {
+    techPillar = `基本となるボールタッチの柔らかさと、プレッシャー下でもブレない足元のコントロールを継続して磨きましょう。`;
+  }
+
+  // 2. Tactical
+  let tactPillar = '';
+  if (isVision) {
+    tactPillar = `ボールだけでなく「相手の重心・味方の距離・裏のスペース」の3つを同時に把握するスキャンの頻度を高めることで、プレーの選択肢が格段に広がります。`;
+  } else if (isPosition) {
+    tactPillar = `味方と相手DFの間（ギャップ）や相手の背後など、相手が最も嫌がるスペースへ常に顔を出し直すオフザボールの動き直しが重要です。`;
+  } else if (isTransition) {
+    tactPillar = `攻守が切り替わった最初の3歩を素早く動くことで、相手のリアクションより常に先手を取ることができます。`;
+  } else {
+    tactPillar = `周囲の状況を認知し、ボールを受ける前に「前を向く」「パスを出す」「やり直す」の優先順位を明確にしておくことが戦術的判断を高めます。`;
+  }
+
+  // 3. Physical
+  let physPillar = '';
+  const cond = Number(input.condition) || 3;
+  if (cond <= 2) {
+    physPillar = `コンディション${cond}/5の疲労がある中での${input.minutesPlayed}分間のプレーでした。股関節周りのストレッチと疲労回復を最優先し、体幹を意識した姿勢で身体の負担を軽減しましょう。`;
+  } else if (isContact) {
+    physPillar = `相手とのコンタクト時に上体を少し前傾させ、股関節を軽く落とした「2軸の姿勢」を保つことで、当たり負けせずにボールをキープできます。`;
+  } else if (input.minutesPlayed >= 50) {
+    physPillar = `${input.minutesPlayed}分間のフル稼働でもプレーの質を落とさないよう、後半の疲労時ほど初速の一歩目をコンパクトに踏み出す効率的な身体操作を意識しましょう。`;
+  } else {
+    physPillar = `コンディション${cond}/5を活かし、アジリティとクイックネス（敏捷性）を活かした素早い方向転換とダッシュ力を維持できています。`;
+  }
+
+  // 4. Mental
+  let mentPillar = '';
+  if (isMentalWeak) {
+    mentPillar = `失敗を恐れず果敢に挑んだ経験は大きな収穫です。「ミス＝次の成功のヒント」と捉え、胸を張って次のプレーにチャレンジする強気なメンタルを育みましょう。`;
+  } else if (isVoice) {
+    mentPillar = `ピッチ内外での声出しやコミュニケーションは、自分だけでなくチーム全体の集中力を高める大きなリーダーシップです。`;
+  } else {
+    mentPillar = `自分のプレーの長所と課題をしっかりと客観的に振り返ることができており、向上心とメンタルの充実度が高い状態にあります。`;
+  }
+
+  // --- Dynamic Scores Calculation (1 - 5 range) ---
+  const goodLen = good.length;
+  const chalLen = chal.length;
+
+  let techScore = 3;
+  if (isShoot || isDribble || isPass || isTrap) {
+    techScore = goodLen > 15 ? 4 : 3;
+    if (goodLen > 40 && !/ミス|失敗|全然/.test(good)) techScore = 5;
+  }
+  if (/全く|全然|ヘタクソ|ミスばかり/.test(chal)) techScore = Math.max(2, techScore - 1);
+
+  let tactScore = 3;
+  if (isVision || isPosition || isTransition) tactScore = 4;
+  if (goodLen > 30 && chalLen > 30) tactScore = Math.min(5, tactScore + 1);
+  if (/見えてない|気づかない|孤立/.test(chal)) tactScore = Math.max(2, tactScore - 1);
+
+  let physScore = cond;
+  if (isStamina && chalLen > 10) physScore = Math.max(2, Math.min(4, cond - 1));
+  if (cond >= 4 && !isStamina) physScore = Math.min(5, cond);
+
+  let mentScore = 3;
+  if (goodLen > 20) mentScore += 1;
+  if (isVoice) mentScore += 1;
+  if (isMentalWeak) mentScore = Math.max(2, mentScore - 1);
+  mentScore = Math.max(1, Math.min(5, mentScore));
 
   return {
-    summary_title: `${titlePrefix}：成功体験を再現し課題を次へ繋げる振り返り`,
+    summary_title,
     four_pillars: {
-      technical: `【良かった点】${good.slice(0, 60)}におけるボールタッチと技術の再現性が光りました。【改善点】${chal.slice(0, 60)}の局面では、受ける前の半身の作り方とファーストタッチを置く位置（足元に入りすぎない斜め前1m）を整理するとさらに精度が上がります。`,
-      tactical: `ボールが移動している最中に首を振って周囲（相手DFの重心と味方のサポート角度）を認知するタイミングが重要です。攻守の切り替え（トランジション）で最初の3歩を素早く踏み出すことで、常に先手を取れるようになります。`,
-      physical: `${input.minutesPlayed}分間のプレー（コンディション${input.condition}/5）の中で、コンタクト時やターン時に股関節を軽く折りたたんだ「2軸の姿勢」を保つことで、後半の疲労時でも初速のキレとボディバランスを維持できます。`,
-      mental: `自分の言葉で「できたこと」と「悔しかったこと」を具体的に言語化できていること自体が成長の証です。ミスが起きた直後の3秒間で気持ちを切り替えて次のプレーに関わり続けましょう。`,
+      technical: techPillar,
+      tactical: tactPillar,
+      physical: physPillar,
+      mental: mentPillar,
     },
     scores: {
       technical: techScore,
@@ -578,9 +717,9 @@ export function generateFallbackAnalysis(input: {
       mental: mentScore,
     },
     coaching_feedback: {
-      praise: `「${good.slice(0, 70)}」というプレーは、偶然ではなく準備と判断が噛み合った素晴らしい成功体験です。どういったタイミング・身体の向きでそのプレーができたのか、その感覚をしっかり自分の武器として記憶に残しましょう。`,
-      improvement: `「${chal.slice(0, 70)}」の課題を解決する鍵は、ボールが自分の足元に来てから考えるのではなく、味方がパスを出す直前の「0.5秒前」に相手の位置をチラ見してファーストタッチの方向を決めておくことです。`,
-      next_action: `次の練習の最初のゲーム形式から「パスを受ける前に必ず1回首を振り、ファーストタッチを自分の前方のスペースへ置く」ことだけに集中してトライする。`,
+      praise: praiseText,
+      improvement: improvementText,
+      next_action: nextActionText,
     },
   };
 }

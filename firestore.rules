@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 家族合言葉認証（認証ステータス・ハッシュ検証用メタデータ）
+    match /soccer_growth_meta/{docId} {
+      allow read, write: if true;
+    }
+
+    // 家族専用コレクション（合言葉から導出された64文字のキー配下のみアクセス許可）
+    // 合言葉を知らない部外者はコレクションパス自体を推測・一覧取得できません
+    match /soccer_growth_families/{familyKey}/records/{docId} {
+      allow read, write: if familyKey.size() == 64;
+    }
+    match /soccer_growth_families/{familyKey}/spikes/{docId} {
+      allow read, write: if familyKey.size() == 64;
+    }
+    match /soccer_growth_families/{familyKey}/meta/{docId} {
+      allow read, write: if familyKey.size() == 64;
+    }
+
+    // レガシーデータ移行用（既存データの引き継ぎ用）
+    match /soccer_growth_records/{docId} {
+      allow read, write: if true;
+    }
+    match /soccer_growth_spikes/{docId} {
+      allow read, write: if true;
+    }
+
+    // 他のコレクション（既存アプリ soccer-pickup-calc を含む）はすべて拒否して安全に保護
+  }
+}
+

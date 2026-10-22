@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Sparkles,
   Mic,
@@ -17,6 +17,10 @@ import {
   BatteryLow,
   Loader2,
   FileText,
+  Key,
+  Settings,
+  Cpu,
+  AlertCircle,
 } from 'lucide-react';
 import {
   AIAnalysisResult,
@@ -24,8 +28,15 @@ import {
   MatchType,
   SpikeGear,
   VideoTimestamp,
+  generateFallbackAnalysis,
   validateNewRecord,
 } from '@/lib/soccer-tracker';
+import {
+  analyzeMatchReflection,
+  getStoredApiKey,
+  setStoredApiKey,
+} from '@/lib/gemini-client';
+import GeminiApiKeyModal from './GeminiApiKeyModal';
 import RadarChart from './RadarChart';
 import YoutubeTimestampPlayer from './YoutubeTimestampPlayer';
 
@@ -69,6 +80,33 @@ export default function NewRecordTab({
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [formError, setFormError] = useState<string>('');
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string>('');
+
+  // Gemini API key & Source State
+  const [apiKeyInput, setApiKeyInput] = useState<string>('');
+  const [hasApiKey, setHasApiKey] = useState<boolean>(false);
+  const [showApiSettings, setShowApiSettings] = useState<boolean>(false);
+  const [apiSaveMsg, setApiSaveMsg] = useState<string>('');
+  const [aiSource, setAiSource] = useState<'gemini' | 'smart_fallback' | null>(null);
+  const [modelUsed, setModelUsed] = useState<string>('');
+  const [analysisWarning, setAnalysisWarning] = useState<string>('');
+
+  useEffect(() => {
+    const key = getStoredApiKey();
+    setApiKeyInput(key);
+    setHasApiKey(Boolean(key));
+  }, []);
+
+  const handleSaveApiKey = () => {
+    setStoredApiKey(apiKeyInput);
+    const saved = Boolean(apiKeyInput.trim());
+    setHasApiKey(saved);
+    setApiSaveMsg(
+      saved
+        ? 'APIキーを保存しました！Gemini AI分析が有効です。'
+        : 'APIキーを削除しました。内蔵スマート分析が有効です。'
+    );
+    setTimeout(() => setApiSaveMsg(''), 3000);
+  };
 
   // Web Speech API state
   const [listeningField, setListeningField] = useState<'good' | 'challenges' | null>(null);
@@ -176,27 +214,26 @@ export default function NewRecordTab({
     setIsAnalyzing(true);
     try {
       const selectedSpike = spikes.find((s) => s.id === spikeId);
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date,
-          type,
-          opponent: opponent || '対戦相手',
-          minutesPlayed,
-          condition,
-          spikeName: selectedSpike ? `${selectedSpike.brand} ${selectedSpike.modelName}` : '',
-          goodPlays,
-          challenges,
-        }),
+      const res = await analyzeMatchReflection({
+        date,
+        type,
+        opponent: opponent || '対戦相手',
+        minutesPlayed: Number(minutesPlayed) || 40,
+        condition: Number(condition) || 4,
+        spikeName: selectedSpike ? `${selectedSpike.brand} ${selectedSpike.modelName}` : '',
+        goodPlays,
+        challenges,
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.analysis) {
-        throw new Error(data.error || 'AI分析に失敗しました');
+      setAiAnalysis(res.analysis);
+      setAiSource(res.source);
+      setModelUsed(res.modelUsed || '');
+      if (res.source === 'smart_fallback' && res.errorMessage) {
+        setAnalysisWarning(`Gemini API接続失敗 (${res.errorMessage}) のため、内蔵スマートAIで完了しました。API設定で「接続テスト」をご確認ください。`);
+      } else {
+        setAnalysisWarning('');
       }
-      setAiAnalysis(data.analysis);
-      return data.analysis as AIAnalysisResult;
+      return res.analysis;
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'AIコーチ分析の取得に失敗しました。');
       return null;
@@ -250,12 +287,12 @@ export default function NewRecordTab({
   };
 
   return (
-    <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+    <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full max-w-full overflow-x-hidden">
       {/* Left Column: Input Form & Video (7 cols) */}
       <div className="lg:col-span-7 space-y-6">
         {/* Section 1: Basic Match Info */}
         <section className="rounded-2xl bg-slate-900/70 border border-slate-800 p-5 sm:p-6 space-y-5">
-          <div className="flex items-center justify-between gap-4 border-b border-slate-800/80 pb-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3.5">
             <div>
               <h2 className="text-lg font-bold text-slate-100 tracking-tight">
                 01. 基本情報とコンディション
@@ -327,7 +364,7 @@ export default function NewRecordTab({
                 type="text"
                 value={opponent}
                 onChange={(e) => setOpponent(e.target.value)}
-                placeholder="例: FCバロンドールU-12 / ポゼッション＆紅白戦"
+                placeholder="例: FCバロンドールU-15 / ポゼッション＆紅白戦"
                 className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -354,7 +391,7 @@ export default function NewRecordTab({
               <span className="block text-xs font-medium text-slate-300 mb-1.5">
                 コンディション (5段階)
               </span>
-              <div className="grid grid-cols-5 gap-1.5">
+              <div className="grid grid-cols-5 gap-1 sm:gap-1.5">
                 {CONDITION_LEVELS.map((lvl) => {
                   const Icon = lvl.icon;
                   const active = condition === lvl.value;
@@ -364,14 +401,14 @@ export default function NewRecordTab({
                       type="button"
                       onClick={() => setCondition(lvl.value)}
                       aria-label={`コンディション ${lvl.label}`}
-                      className={`min-h-[48px] py-2 px-1.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all ${
+                      className={`min-h-[48px] py-1.5 px-1 rounded-xl border flex flex-col items-center justify-center gap-0.5 transition-all min-w-0 overflow-hidden ${
                         active
                           ? 'bg-emerald-500/15 border-emerald-500 text-emerald-300'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
                       }`}
                     >
-                      <Icon className="w-4 h-4" />
-                      <span className="text-[11px] font-mono tabular-nums font-medium whitespace-nowrap">
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span className="text-[10px] sm:text-[11px] font-mono tabular-nums font-medium text-center truncate max-w-full">
                         {lvl.label}
                       </span>
                     </button>
@@ -419,7 +456,7 @@ export default function NewRecordTab({
 
           {/* Good Plays */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label htmlFor="good-plays-textarea" className="text-xs font-semibold text-emerald-400">
                 良かったプレー・通用したこと
               </label>
@@ -458,7 +495,7 @@ export default function NewRecordTab({
 
           {/* Challenges */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label htmlFor="challenges-textarea" className="text-xs font-semibold text-sky-400">
                 課題・悔しかったこと・次直したいこと
               </label>
@@ -493,6 +530,37 @@ export default function NewRecordTab({
               placeholder="例: ペナルティエリア手前でフリーになった場面で、焦ってシュートが浮いてしまった。終盤の1対1で体が流れた。"
               className="w-full rounded-xl bg-slate-950 border border-slate-800 p-3.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 leading-relaxed"
             />
+          </div>
+
+          {/* AI Mode Banner & Quick Key Config */}
+          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {hasApiKey ? (
+                <>
+                  <Zap className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div className="text-xs truncate">
+                    <span className="font-bold text-emerald-300">Gemini 3.8 Flash 連携中</span>
+                    <span className="text-[11px] text-slate-400 hidden sm:inline ml-1.5">（個別AI読解モード）</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Cpu className="w-4 h-4 text-blue-400 shrink-0" />
+                  <div className="text-xs truncate">
+                    <span className="font-semibold text-slate-200">内蔵スマートAIモード</span>
+                    <span className="text-[11px] text-slate-400 hidden sm:inline ml-1.5">（APIキー不要）</span>
+                  </div>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowApiSettings(true)}
+              className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 border border-emerald-500/30 transition flex items-center gap-1 shrink-0"
+            >
+              <Key className="w-3 h-3 text-emerald-400" />
+              <span>{hasApiKey ? 'キー変更' : 'Geminiキー設定'}</span>
+            </button>
           </div>
 
           <div className="pt-1">
@@ -540,16 +608,43 @@ export default function NewRecordTab({
       {/* Right Column: AI Coach Structured Feedback Card & Save Action (5 cols) */}
       <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-20">
         <section className="rounded-2xl bg-slate-900/80 border border-slate-800 p-5 sm:p-6 space-y-5">
-          <div className="border-b border-slate-800/80 pb-3.5 flex items-center justify-between">
+          <div className="border-b border-slate-800/80 pb-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold text-slate-100 tracking-tight">
+              <h2 className="text-base sm:text-lg font-bold text-slate-100 tracking-tight flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-emerald-400" />
                 AI専属コーチの構造化分析レポート
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
                 技術・戦術・フィジカル・メンタルの4軸評価と次へのアクション
               </p>
             </div>
+
+            {/* Status Badge & Settings Toggle */}
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              {hasApiKey ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  <Zap className="w-3 h-3 text-emerald-400" />
+                  Gemini AI 連携中
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                  <Cpu className="w-3 h-3 text-blue-400" />
+                  内蔵スマートAI
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowApiSettings(true)}
+                className="p-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition text-xs flex items-center gap-1"
+                title="Gemini API設定"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                <span className="text-[11px]">設定</span>
+              </button>
+            </div>
           </div>
+
+
 
           {isAnalyzing && (
             <div className="space-y-4 py-6">
@@ -572,7 +667,7 @@ export default function NewRecordTab({
                   振り返りメモを入力して「AIコーチに分析してもらう」を押してください
                 </p>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  JFA育成年代の指導理論に基づき、「いつ・どこで・どう動くか」に焦点を当てた4軸スコアと具体的な改善アクションを表示します。
+                  JFAジュニアユース（U-15）年代の指導理論に基づき、「いつ・どこで・どう動くか」に焦点を当てた4軸スコアと具体的な改善アクションを表示します。
                 </p>
               </div>
             </div>
@@ -580,10 +675,29 @@ export default function NewRecordTab({
 
           {!isAnalyzing && aiAnalysis && (
             <div className="space-y-5" data-testid="ai-analysis-result">
+              {analysisWarning && (
+                <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-xs text-amber-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>{analysisWarning}</span>
+                </div>
+              )}
               {/* Summary Title */}
               <div className="p-4 rounded-xl bg-slate-950 border border-emerald-500/40">
-                <div className="text-[11px] font-medium text-emerald-400 mb-1">
-                  振り返りの一言タイトル
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-medium text-emerald-400">
+                    振り返りの一言タイトル
+                  </span>
+                  {aiSource === 'gemini' ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 font-semibold">
+                      <Zap className="w-2.5 h-2.5 text-emerald-400" />
+                      Gemini AI 稼働中 (Live: {modelUsed || 'Flash'})
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/40 flex items-center gap-1 font-semibold">
+                      <Cpu className="w-2.5 h-2.5 text-blue-400" />
+                      内蔵スマートAI
+                    </span>
+                  )}
                 </div>
                 <h3 className="text-base font-bold text-slate-100 leading-snug">
                   {aiAnalysis.summary_title}
@@ -724,6 +838,15 @@ export default function NewRecordTab({
           </button>
         </section>
       </div>
+      {/* Modal for setting API key */}
+      <GeminiApiKeyModal
+        isOpen={showApiSettings}
+        onClose={() => setShowApiSettings(false)}
+        onKeySaved={() => {
+          const key = getStoredApiKey();
+          setHasApiKey(Boolean(key));
+        }}
+      />
     </form>
   );
 }
